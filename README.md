@@ -19,6 +19,19 @@ python -m pytest -q        # 100+ offline tests, no network, no API key
 verdict judge --prompt "Answer in JSON: 2+2?" --response '{"answer": "4"}'
 ```
 
+## 🟢 New to AI? Read this first
+
+**The problem, in human terms.** Companies now use an AI model to grade other AI models ("rate this answer 1-5 for helpfulness"). But that grader is *itself* a fallible machine: it might prefer the first answer it reads, favor longer answers, or grade its own writing more kindly — and nobody checks the grader's work.
+
+**What this project does.** VerdictAI is the quality-control lab for AI answers, in four steps:
+
+1. **Grade it** — AI answers are scored against a written rubric (like a school marking scheme: "accuracy 0-5, evidence 0-5, tone 0-5") with quoted proof for each score. For "which answer is better?" questions, it grades the pair in *both* orders and de-biases the result — if the verdict flips depending on which answer was read first, that **position bias** is caught and measured.
+2. **Check the grader against humans** — humans grade a sample too. VerdictAI computes how much the AI grader agrees with humans *beyond luck* (Cohen's kappa), finds its tics (does it just like long answers? its own writing style?), and then **re-curves** its scores onto the human scale using isotonic regression — the same idea as a teacher curving exam marks, done with a provably-correct algorithm (PAV) implemented from scratch.
+3. **Make better exam questions** — an automated generator builds golden test sets with real variety (topics × personas × difficulty × nasty edge cases like hidden instructions and unicode tricks), tracks that nothing is missed on a coverage matrix, and strips anything too similar to training data (decontamination) so the exam can't be "memorised".
+4. **Sound the alarm** — every model version's exam scores are snapshotted. When a new version arrives, paired bootstrap confidence intervals decide whether a score drop is a *real regression or noise*; the CI gate fails the build on real regressions and stays silent on noise.
+
+**Measured outcomes:** 148 automated tests pass offline in under a second — including hand-computed statistics fixtures (kappa = 0.5 on a worked example, quadratic weighted kappa = 2/7, PAV interpolation 2.5 → 3.75), planted position-bias detected and corrected, bootstrap CIs that correctly flag planted degradations and pass seeded noise, and end-to-end CLI gate runs with correct exit codes. Nothing is trusted without a number.
+
 ---
 
 ## Why this exists
