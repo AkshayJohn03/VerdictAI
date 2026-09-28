@@ -30,7 +30,7 @@ verdict judge --prompt "Answer in JSON: 2+2?" --response '{"answer": "4"}'
 3. **Make better exam questions** — an automated generator builds golden test sets with real variety (topics × personas × difficulty × nasty edge cases like hidden instructions and unicode tricks), tracks that nothing is missed on a coverage matrix, and strips anything too similar to training data (decontamination) so the exam can't be "memorised".
 4. **Sound the alarm** — every model version's exam scores are snapshotted. When a new version arrives, paired bootstrap confidence intervals decide whether a score drop is a *real regression or noise*; the CI gate fails the build on real regressions and stays silent on noise.
 
-**Measured outcomes:** 148 automated tests pass offline in under a second — including hand-computed statistics fixtures (kappa = 0.5 on a worked example, quadratic weighted kappa = 2/7, PAV interpolation 2.5 → 3.75), planted position-bias detected and corrected, bootstrap CIs that correctly flag planted degradations and pass seeded noise, and end-to-end CLI gate runs with correct exit codes. Nothing is trusted without a number.
+**Measured outcomes:** 177 automated tests pass offline in under two seconds — including hand-computed statistics fixtures (kappa = 0.5 on a worked example, quadratic weighted kappa = 2/7, PAV interpolation 2.5 → 3.75), planted position-bias detected and corrected, bootstrap CIs that correctly flag planted degradations and pass seeded noise, and end-to-end CLI gate runs with correct exit codes. Nothing is trusted without a number.
 
 ---
 
@@ -117,6 +117,7 @@ flowchart TB
 | `regression/runner.py` | `ModelAdapter` protocol, `GoldenRunner`, append-only `SnapshotStore`, offline `OfflineReplayAdapter` |
 | `regression/drift.py` | paired bootstrap CI, Wilcoxon signed-rank (exact small-n / normal + tie correction), Cliff's delta, `DriftDetector` |
 | `regression/gate.py` | CI gate: exit codes, markdown summary, webhook-ready alert JSON |
+| `service.py` | FastAPI eval-service: async eval runs, gate endpoint, HMAC-signed webhooks, API-key auth |
 
 ## Quickstart
 
@@ -190,6 +191,53 @@ asyncio.run(run_all())
 gate = run_gate(store.latest("baseline-v1"), store.latest("candidate-v2"))
 print(gate.report_markdown, gate.exit_code)
 ```
+
+## Serve the gate (eval-service HTTP API)
+
+The same harness is available over HTTP so CI systems and internal platforms
+consume VerdictAI without shelling out to the CLI. Runs still execute fully
+offline: candidates are the `replay`/`mock` adapters (no live model calls) and
+the default judge is the deterministic reference judge.
+
+```bash
+pip install -e .                       # brings in fastapi + uvicorn
+export VERDICTAI_API_KEYS="ci-key,platform-key"   # optional; unset = auth disabled
+uvicorn verdictai.service:create_app --factory --port 8077
+```
+
+API keys arrive in the `X-VerdictAI-Key` header; the service stores only their
+SHA-256 hashes and compares in constant time. `GET /health` never requires a
+key. Requests may carry `X-Correlation-ID`; it is echoed on every response.
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET` | `/health` | liveness probe (no auth) |
+| `POST` | `/v1/eval-runs` | submit an eval run: inline dataset JSONL **or** a registered dataset name, a `replay`/`mock` candidate adapter with params, and metadata (`model_version`, `triggered_by`). Returns `202` + `run_id`; the golden runner executes in a background thread |
+| `GET` | `/v1/eval-runs/{run_id}` | status (`queued`/`running`/`succeeded`/`failed`) + metrics summary when done |
+| `GET` | `/v1/eval-runs/{run_id}/report` | run report as JSON (default) or `?format=markdown`; once a gate has run it serves the gate report instead |
+| `POST` | `/v1/eval-runs/{run_id}/gate` | gate this run as candidate against `{"baseline_run_id", "threshold", "min_effect"}`; returns `{passed, exit_code, verdict, evidence}` — `exit_code` mirrors `verdict regress --gate` |
+| `POST` | `/v1/eval-runs/{run_id}/webhook` | register `{url, secret}`; on run completion the service POSTs the event JSON with `X-VerdictAI-Signature: sha256=<hex HMAC of the body>` (GitHub-style; verify over the raw bytes with your secret) |
+
+```bash
+RUN=$(curl -s -X POST localhost:8077/v1/eval-runs \
+  -H "X-VerdictAI-Key: ci-key" -H "Content-Type: application/json" \
+  -d '{
+        "dataset": {"name": "golden-smoke"},
+        "candidate": {"adapter": "replay",
+                      "params": {"quality": 1.0, "model_version": "candidate-v2"}},
+        "metadata": {"model_version": "candidate-v2", "triggered_by": "ci"}
+      }' | python -c "import sys, json; print(json.load(sys.stdin)['run_id'])")
+
+curl -s -H "X-VerdictAI-Key: ci-key" localhost:8077/v1/eval-runs/$RUN
+curl -s -X POST -H "X-VerdictAI-Key: ci-key" \
+     -d '{"baseline_run_id": "<baseline-run-id>", "threshold": 0.05}' \
+     localhost:8077/v1/eval-runs/$RUN/gate
+```
+
+Datasets can be submitted inline (`"dataset": {"jsonl": "...", "version": "v1"}`) or
+pre-registered at startup: `create_app(registered_datasets={"golden-smoke": dataset})`.
+Run state lives in memory with a TTL (1 h) and a 100-run cap (oldest evicted) —
+the service is a thin async skin over offline runs, not a run database.
 
 ## Design decisions (and their trade-offs)
 
