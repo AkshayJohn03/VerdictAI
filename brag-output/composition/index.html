@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>VerdictAI — whiteboard lecture</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  @font-face {
+    font-family: "Ink Free";
+    src: url("assets/fonts/Inkfree.ttf") format("truetype");
+    font-weight: normal; font-style: normal;
+  }
+  :root {
+    --board: #13211d;
+    --chalk: #f2f0e9;
+    --chalk-dim: #d5d2c6;
+    --amber: #f5b942;
+    --teal: #63d3c3;
+    --blue: #9ec5e8;
+    --red: #f09a8e;
+    --line: rgba(242, 240, 233, 0.25);
+  }
+  body { margin: 0; background: #0d1714; }
+  #root {
+    position: relative; width: 100%; height: 100%; overflow: hidden;
+    background:
+      radial-gradient(1400px 900px at 42% 38%, rgba(255,255,255,0.05), rgba(0,0,0,0) 62%),
+      radial-gradient(1200px 800px at 85% 90%, rgba(0,0,0,0.28), rgba(0,0,0,0) 60%),
+      var(--board);
+    color: var(--chalk);
+    font-family: system-ui, sans-serif;
+  }
+  .clip { position: absolute; inset: 0; }
+  .scene-inner { position: absolute; inset: 0; }
+  .board {
+    position: absolute; inset: 0; box-sizing: border-box;
+    display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 34px;
+    padding: 52px 60px 88px;
+  }
+  .main { position: relative; min-width: 0; }
+  .rail { position: relative; display: flex; flex-direction: column; gap: 14px; justify-content: center; min-width: 0; }
+  h1 {
+    margin: 0 0 26px 0; font-family: "Ink Free", system-ui, sans-serif;
+    font-weight: 400; font-size: 52px; line-height: 1.08; color: var(--chalk);
+  }
+  .u { display: block; width: 240px; height: 5px; margin-top: 12px; border-radius: 3px;
+       background: linear-gradient(90deg, var(--amber), rgba(245,185,66,0.15)); }
+  .u.teal { background: linear-gradient(90deg, var(--teal), rgba(99,211,195,0.15)); }
+  .scene-tag {
+    position: absolute; left: 60px; bottom: 30px;
+    font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; color: var(--chalk-dim);
+  }
+  .kcard {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-left: 5px solid var(--teal); border-radius: 10px; padding: 14px 18px;
+  }
+  .kcard.amber { border-left-color: var(--amber); }
+  .kcard.blue { border-left-color: var(--blue); }
+  .kcard.red { border-left-color: var(--red); }
+  .kcard .term { font-family: "Ink Free", system-ui, sans-serif; font-size: 28px; color: var(--chalk); display: block; }
+  .kcard .def { display: block; margin-top: 4px; font-size: 21.5px; line-height: 1.32; color: var(--chalk-dim); }
+  .panel {
+    background: rgba(255,255,255,0.045); border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .panel .cap { font-family: "Ink Free", system-ui, sans-serif; font-size: 25px; color: var(--chalk); display: block; margin-bottom: 8px; }
+  .mono { font-family: ui-monospace, monospace; }
+  .chip { display: inline-block; border-radius: 999px; padding: 4px 14px; font-size: 22px; font-weight: 600; }
+  .chip.amber { background: var(--amber); color: #241a06; }
+  .chip.teal { background: var(--teal); color: #0d2621; }
+  .chip.red { background: var(--red); color: #2b0f0a; }
+  .chip.ghost { border: 1.5px solid var(--line); color: var(--chalk-dim); }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .dim { color: var(--chalk-dim); }
+  .amber { color: var(--amber); }
+  .teal { color: var(--teal); }
+  .blue { color: var(--blue); }
+  .red { color: var(--red); }
+  .absbox { position: absolute; box-sizing: border-box; }
+
+  /* scene 1 */
+  #s1-title { position: absolute; left: 40px; top: 40px; }
+  #s1-title .t { font-family: "Ink Free", system-ui, sans-serif; font-size: 58px; display: block; }
+  #s1-title .s { font-size: 26px; color: var(--chalk-dim); display: block; margin-top: 4px; }
+  #s1-sketch { position: absolute; left: 40px; top: 200px; width: 700px; }
+  .sheet { width: 300px; border: 3px solid var(--blue); border-radius: 8px; padding: 14px 18px; background: rgba(158,197,232,0.06); }
+  .sheet .ln { height: 5px; background: rgba(158,197,232,0.4); border-radius: 2px; margin: 0 0 10px; }
+  .jbox { border: 3px solid var(--amber); border-radius: 14px; padding: 18px 26px; background: rgba(245,185,66,0.06); display: inline-block; }
+  .jbox .big { font-family: "Ink Free", system-ui, sans-serif; font-size: 40px; display: block; }
+  .jbox .sub { font-size: 20px; color: var(--chalk-dim); display: block; margin-top: 4px; }
+  .stamp { border: 3px dashed var(--teal); border-radius: 10px; padding: 8px 18px; font-family: "Ink Free", system-ui, sans-serif; font-size: 30px; color: var(--teal); display: inline-block; }
+  .arrowR { font-size: 34px; color: var(--chalk-dim); }
+  #s1-question { position: absolute; left: 40px; top: 520px; width: 760px; font-family: "Ink Free", system-ui, sans-serif; font-size: 46px; color: var(--amber); }
+  #s1-promise { position: absolute; left: 40px; top: 640px; width: 760px; font-size: 24px; color: var(--chalk); border-left: 4px solid var(--teal); padding-left: 16px; line-height: 1.4; }
+  #s1-tics { position: absolute; right: 0px; top: 240px; width: 480px; display: flex; flex-direction: column; gap: 16px; }
+  .tic { border: 2px solid var(--red); border-radius: 12px; padding: 14px 20px; background: rgba(240,154,142,0.06); }
+  .tic .h { font-family: "Ink Free", system-ui, sans-serif; font-size: 28px; color: var(--red); display: block; }
+  .tic .w { font-size: 20px; color: var(--chalk-dim); display: block; margin-top: 4px; }
+
+  /* scene 2 */
+  #s2-analogy { position: absolute; left: 0; top: 170px; width: 1200px; font-size: 27px; line-height: 1.45; color: var(--chalk-dim); }
+  #s2-analogy b { color: var(--chalk); font-weight: 600; }
+  #s2-pipe { position: absolute; left: 0; top: 400px; right: 0; display: flex; gap: 16px; align-items: center; }
+  .station { border: 2.5px solid var(--line); border-radius: 12px; padding: 20px 0 16px; width: 250px; text-align: center; background: rgba(255,255,255,0.035); }
+  .station .n { font-family: "Ink Free", system-ui, sans-serif; font-size: 36px; color: var(--chalk); display: block; }
+  .station .d { font-size: 19px; color: var(--chalk-dim); display: block; margin-top: 6px; padding: 0 12px; }
+  .station.gate { border-color: var(--amber); }
+  .pipe-arrow { color: var(--chalk-dim); font-size: 30px; }
+  #s2-note { position: absolute; left: 0; top: 660px; width: 1200px; font-size: 23px; color: var(--teal); }
+
+  /* scene 3 */
+  #s3-card { position: absolute; left: 0; top: 165px; width: 900px; }
+  .crow { display: flex; gap: 14px; padding: 9px 0; border-bottom: 1.5px dashed var(--line); font-size: 25px; align-items: baseline; }
+  .crow:last-child { border-bottom: none; }
+  .crow .cn { min-width: 190px; color: var(--chalk); font-weight: 600; }
+  .crow .cs { color: var(--teal); min-width: 130px; }
+  .crow .cw { color: var(--amber); }
+  #s3-anchor { position: absolute; left: 0; top: 420px; width: 900px; font-size: 23px; color: var(--chalk-dim); border-left: 4px solid var(--blue); padding-left: 16px; }
+  #s3-anchor b { color: var(--blue); }
+  #s3-quote { position: absolute; left: 0; top: 520px; width: 900px; }
+  .qchip { border: 2px solid var(--teal); border-radius: 10px; padding: 12px 18px; font-size: 22.5px; background: rgba(99,211,195,0.06); }
+  .qchip .qm { color: var(--teal); font-family: "Ink Free", system-ui, sans-serif; }
+  #s3-total { position: absolute; left: 0; top: 660px; width: 900px; font-size: 26px; color: var(--chalk); }
+  #s3-total b { font-family: "Ink Free", system-ui, sans-serif; font-size: 40px; color: var(--amber); }
+
+  /* scene 4 */
+  #s4-duel { position: absolute; left: 0; top: 165px; width: 1230px; display: flex; gap: 22px; align-items: stretch; }
+  .acard { flex: 1; border-radius: 12px; padding: 14px 18px; font-size: 21.5px; line-height: 1.35; }
+  .acard .tag { font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; display: block; margin-bottom: 6px; }
+  .acard.a { border: 2.5px solid var(--blue); background: rgba(158,197,232,0.06); }
+  .acard.b { border: 2.5px solid var(--line); background: rgba(255,255,255,0.03); }
+  #s4-passes { position: absolute; left: 0; top: 400px; width: 1230px; display: flex; gap: 22px; }
+  .pass { flex: 1; border: 2px solid var(--line); border-radius: 12px; padding: 12px 18px; }
+  .pass .p { font-size: 20px; color: var(--chalk-dim); display: block; }
+  .pass .v { font-family: "Ink Free", system-ui, sans-serif; font-size: 30px; display: block; margin-top: 4px; }
+  .pass.flip { border-color: var(--red); }
+  .pass.flip .v { color: var(--red); }
+  #s4-result { position: absolute; left: 0; top: 580px; width: 1230px; display: flex; gap: 18px; align-items: center; font-size: 24px; }
+  #s4-result .big { border: 2.5px solid var(--amber); border-radius: 10px; padding: 8px 18px; font-family: "Ink Free", system-ui, sans-serif; font-size: 32px; color: var(--amber); }
+  #s4-biases { position: absolute; left: 0; top: 680px; width: 1230px; display: flex; gap: 16px; }
+
+  /* scene 5 */
+  #s5-formula { position: absolute; left: 0; top: 160px; width: 760px; font-family: "Ink Free", system-ui, sans-serif; font-size: 40px; color: var(--amber); }
+  #s5-formula .fr { font-family: ui-monospace, monospace; font-size: 33px; color: var(--chalk); display: block; margin-top: 8px; }
+  #s5-worked { position: absolute; left: 0; top: 330px; width: 760px; }
+  .wrow { display: flex; gap: 10px; align-items: center; padding: 8px 0; font-size: 26px; }
+  .wrow .wl { min-width: 220px; color: var(--chalk-dim); }
+  .wrow .cell { border: 2px solid var(--line); border-radius: 8px; padding: 4px 14px; font-family: ui-monospace, monospace; font-size: 24px; }
+  .wrow.judge .cell { border-color: var(--amber); color: var(--amber); }
+  .wrow.human .cell { border-color: var(--blue); color: var(--blue); }
+  #s5-calc { position: absolute; left: 0; top: 540px; width: 760px; display: flex; gap: 16px; align-items: center; font-size: 24px; }
+  #s5-kappa { border: 3px solid var(--teal); border-radius: 12px; padding: 6px 20px; font-family: "Ink Free", system-ui, sans-serif; font-size: 42px; color: var(--teal); }
+  #s5-scale { position: absolute; left: 0; top: 700px; width: 760px; height: 64px; }
+  .bartrack { position: relative; height: 14px; border-radius: 7px; background: rgba(255,255,255,0.08); }
+  .bartrack .mark { position: absolute; top: -9px; width: 6px; height: 32px; border-radius: 3px; background: var(--teal); }
+  .scalelbl { position: absolute; top: 32px; font-size: 20px; color: var(--chalk-dim); }
+  #s5-coin { position: absolute; left: 820px; top: 200px; width: 380px; }
+
+  /* scene 6 */
+  #s6-chart { position: absolute; left: 0; top: 165px; width: 780px; height: 430px; }
+  .axis { position: absolute; background: rgba(242,240,233,0.3); }
+  .axis.x { left: 40px; right: 0; top: 380px; height: 2px; }
+  .axis.y { left: 40px; top: 0; bottom: 0; width: 2px; }
+  .axlbl { position: absolute; font-size: 19px; color: var(--chalk-dim); }
+  #s6-chart .dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--blue); opacity: 0.85; }
+  .step { position: absolute; height: 8px; background: var(--amber); border-radius: 4px; }
+  .steplink { position: absolute; width: 8px; background: var(--amber); border-radius: 4px; }
+  #s6-kink { position: absolute; left: 640px; top: 60px; width: 240px; font-size: 21px; color: var(--red); }
+  #s6-pav { position: absolute; left: 0; top: 640px; width: 780px; font-size: 22.5px; color: var(--chalk-dim); border-left: 4px solid var(--amber); padding-left: 16px; }
+  #s6-pav b { color: var(--amber); }
+  #s6-right { position: absolute; left: 830px; top: 200px; width: 370px; display: flex; flex-direction: column; gap: 16px; }
+  .mini { border: 2px solid var(--line); border-radius: 10px; padding: 12px 16px; font-size: 20.5px; line-height: 1.3; color: var(--chalk-dim); }
+  .mini .h { font-family: "Ink Free", system-ui, sans-serif; font-size: 24px; color: var(--chalk); display: block; margin-bottom: 4px; }
+  .mini.fixture { border-color: var(--teal); }
+  .mini.fixture .h { color: var(--teal); }
+
+  /* scene 7 */
+  #s7-grid { position: absolute; left: 0; top: 165px; width: 620px; }
+  .dimrow { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .gchip { border: 2px solid var(--blue); color: var(--blue); border-radius: 999px; padding: 4px 14px; font-size: 20px; }
+  .gchip.edge { border-color: var(--red); color: var(--red); }
+  #s7-cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+  .cell7 { height: 44px; border: 1.5px solid var(--line); border-radius: 8px; background: rgba(99,211,195,0.05); }
+  #s7-manifest { position: absolute; left: 0; top: 420px; width: 620px; }
+  .mfile { display: block; font-family: ui-monospace, monospace; font-size: 20px; color: var(--teal); padding: 3px 0; }
+  #s7-leak { position: absolute; left: 680px; top: 190px; width: 550px; }
+  .leakline { font-size: 22px; line-height: 1.5; color: var(--chalk-dim); }
+  .leakline .gram { background: rgba(240,154,142,0.22); color: var(--chalk); border-bottom: 2.5px solid var(--red); padding: 1px 2px; }
+  #s7-dropped { margin-top: 18px; border: 2.5px solid var(--red); border-radius: 12px; padding: 12px 18px; font-size: 23px; color: var(--red); background: rgba(240,154,142,0.05); }
+  #s7-rule { position: absolute; left: 680px; top: 560px; width: 550px; font-family: "Ink Free", system-ui, sans-serif; font-size: 33px; color: var(--amber); }
+
+  /* scene 8 */
+  #s8-snaps { position: absolute; left: 0; top: 165px; width: 1230px; }
+  .snap { display: flex; gap: 14px; align-items: baseline; padding: 8px 14px; border: 2px solid var(--line); border-radius: 10px; margin-bottom: 10px; font-size: 22px; }
+  .snap .v { font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; color: var(--chalk); min-width: 210px; }
+  .snap .sha { font-family: ui-monospace, monospace; color: var(--teal); font-size: 19px; }
+  .snap .meta { color: var(--chalk-dim); font-size: 19px; }
+  #s8-delta { position: absolute; left: 0; top: 330px; width: 1230px; font-size: 23px; color: var(--chalk-dim); }
+  #s8-delta b { color: var(--chalk); }
+  #s8-ci { position: absolute; left: 0; top: 440px; width: 1230px; }
+  .cibar { position: relative; height: 56px; margin-top: 26px; }
+  .cibar .axis { left: 0; right: 0; top: 26px; height: 2px; background: rgba(242,240,233,0.3); }
+  .cibar .zero { position: absolute; left: 4%; top: 6px; width: 3px; height: 42px; background: var(--red); }
+  .cibar .zero-lbl { position: absolute; left: 2.4%; top: 52px; font-size: 20px; color: var(--red); }
+  .cibar .int { position: absolute; top: 14px; height: 26px; border-radius: 6px; background: var(--amber); }
+  .cibar .int.noise { background: var(--teal); }
+  .cibar .ilbl { position: absolute; top: -28px; font-size: 20px; color: var(--chalk-dim); white-space: nowrap; }
+  #s8-verdict { position: absolute; left: 0; top: 610px; width: 1230px; display: flex; gap: 24px; align-items: center; }
+  #s8-exit { border: 4px solid var(--red); border-radius: 14px; padding: 10px 30px; font-family: "Ink Free", system-ui, sans-serif; font-size: 54px; color: var(--red); transform: rotate(-2deg); background: rgba(240,154,142,0.07); }
+  #s8-noise { border: 2.5px solid var(--teal); border-radius: 12px; padding: 10px 20px; font-size: 22px; color: var(--teal); }
+  #s8-webhook { position: absolute; left: 0; top: 740px; width: 1230px; font-size: 22px; color: var(--chalk-dim); }
+  #s8-webhook b { color: var(--chalk); }
+
+  /* scene 9 */
+  #s9-grid { position: absolute; left: 0; top: 165px; width: 1230px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .stat { border: 1.5px solid var(--line); border-radius: 14px; padding: 20px 22px; background: rgba(255,255,255,0.035); }
+  .stat .n { font-family: "Ink Free", system-ui, sans-serif; font-size: 58px; color: var(--teal); line-height: 1; display: block; }
+  .stat .n.amber { color: var(--amber); }
+  .stat .n.red { color: var(--red); }
+  .stat .t { display: block; margin-top: 8px; font-size: 22.5px; color: var(--chalk); font-weight: 600; }
+  .stat .w { display: block; margin-top: 6px; font-size: 19px; line-height: 1.3; color: var(--chalk-dim); }
+  #s9-note { position: absolute; left: 0; top: 760px; width: 1230px; font-size: 21.5px; color: var(--chalk-dim); border-left: 4px solid var(--blue); padding-left: 16px; }
+
+  /* scene 10 */
+  #s10-api { position: absolute; left: 0; top: 165px; width: 760px; }
+  .apiline { display: block; font-family: ui-monospace, monospace; font-size: 20.5px; color: var(--chalk); padding: 7px 0; border-bottom: 1.5px dashed var(--line); }
+  .apiline .m { color: var(--amber); }
+  .apiline .r { color: var(--teal); }
+  #s10-wh { position: absolute; left: 0; top: 470px; width: 760px; }
+  .whcard { border: 2px solid var(--line); border-radius: 10px; padding: 12px 18px; font-family: ui-monospace, monospace; font-size: 19.5px; color: var(--chalk-dim); }
+  .whcard .sig { color: var(--amber); display: block; margin-top: 6px; }
+  #s10-keys { position: absolute; left: 0; top: 640px; width: 760px; font-size: 22px; color: var(--chalk-dim); border-left: 4px solid var(--teal); padding-left: 16px; }
+  #s10-keys b { color: var(--teal); }
+  #s10-corr { position: absolute; left: 820px; top: 240px; width: 370px; }
+  .corrchip { border: 2px dashed var(--blue); border-radius: 10px; padding: 10px 16px; font-family: ui-monospace, monospace; font-size: 19.5px; color: var(--blue); }
+  #s10-corr .cnote { display: block; margin-top: 10px; font-size: 20px; color: var(--chalk-dim); line-height: 1.35; }
+
+  /* scene 11 */
+  #s11-list { position: absolute; left: 0; top: 170px; width: 1180px; }
+  .r11 { display: flex; gap: 16px; align-items: baseline; padding: 9px 0; border-bottom: 1.5px dashed var(--line); font-size: 25.5px; }
+  .r11 .dot { color: var(--teal); font-weight: 800; }
+  #s11-end { position: absolute; left: 0; top: 620px; width: 1180px; }
+  #s11-end .big { font-family: "Ink Free", system-ui, sans-serif; font-size: 52px; color: var(--chalk); display: block; }
+  #s11-end .small { font-size: 27px; color: var(--amber); display: block; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="verdict-lecture" data-start="0" data-width="1920" data-height="1080" data-duration="409.88">
+
+  <!-- ============ SCENE 1 : who grades the grader? (0 – 31.343) ============ -->
+  <section id="s1" class="clip" data-start="0" data-duration="31.343">
+    <div class="scene-inner" id="s1-inner">
+      <div class="board">
+        <div class="main">
+          <div id="s1-title">
+            <span class="t">VerdictAI</span>
+            <span class="s">an exam grader that first learns from human teachers — a whiteboard lecture</span>
+          </div>
+          <div id="s1-sketch">
+            <div class="row" id="s1-flow1">
+              <div class="sheet">
+                <div class="ln" style="width:80%"></div>
+                <div class="ln" style="width:95%"></div>
+                <div class="ln" style="width:70%"></div>
+              </div>
+              <div class="arrowR">→</div>
+              <div class="jbox">
+                <span class="big">AI JUDGE</span>
+                <span class="sub">one model grades another’s answers</span>
+              </div>
+              <div class="arrowR">→</div>
+              <div class="stamp">8 / 10</div>
+            </div>
+          </div>
+          <div id="s1-question">…and who grades the JUDGE?</div>
+          <div id="s1-promise">VerdictAI treats the grader as a measured component: rubric judges checked against humans, biases diagnosed, scores calibrated, releases gated on evidence.</div>
+          <div id="s1-tics">
+            <div class="tic" id="tic1"><span class="h">tic №1 — position</span><span class="w">prefers whichever answer it read first</span></div>
+            <div class="tic" id="tic2"><span class="h">tic №2 — verbosity</span><span class="w">favors longer answers, mistaking length for substance</span></div>
+            <div class="tic" id="tic3"><span class="h">tic №3 — self-preference</span><span class="w">kinder to writing that sounds like its own</span></div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard blue" id="kc-llm">
+            <span class="term">LLM</span>
+            <span class="def">A text engine trained on huge amounts of text. It writes answers — and, here, grades them too.</span>
+          </div>
+          <div class="kcard amber" id="kc-judge">
+            <span class="term">judge (LLM-as-judge)</span>
+            <span class="def">Using one AI model to grade another model’s answers — because human grading doesn’t scale.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">01 · who grades the grader?</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 2 : the quality-control lab (31.343 – 57.082) ============ -->
+  <section id="s2" class="clip" data-start="31.343" data-duration="25.739">
+    <div class="scene-inner" id="s2-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The core idea: measure the grader<span class="u" id="s2-u"></span></h1>
+          <div id="s2-analogy">Training a <b>new teaching assistant</b>: hand it a marking scheme, compare its marks against <b>experienced teachers</b>, give the students an exam that <b>couldn’t have leaked</b> — and put an <b>alarm on the door</b>.</div>
+          <div id="s2-pipe">
+            <div class="station" id="st1"><span class="n">1 · GRADE</span><span class="d">with a written rubric, not vibes</span></div>
+            <div class="pipe-arrow" id="pa1">→</div>
+            <div class="station" id="st2"><span class="n">2 · CHECK</span><span class="d">against human grades — calibration</span></div>
+            <div class="pipe-arrow" id="pa2">→</div>
+            <div class="station" id="st3"><span class="n">3 · BUILD THE EXAM</span><span class="d">golden datasets, decontaminated</span></div>
+            <div class="pipe-arrow" id="pa3">→</div>
+            <div class="station gate" id="st4"><span class="n">4 · GATE</span><span class="d">block the release on evidence</span></div>
+          </div>
+          <div id="s2-note">four stations — everything in this lecture is one of them, looked at closely</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-calibration">
+            <span class="term">calibration</span>
+            <span class="def">Comparing the judge’s grades against human grades, and correcting what the comparison teaches.</span>
+          </div>
+          <div class="kcard" id="kc-golden">
+            <span class="term">golden dataset</span>
+            <span class="def">A fixed, versioned exam with known-good answers — every model version sits the same exam.</span>
+          </div>
+          <div class="kcard amber" id="kc-gate">
+            <span class="term">regression gate</span>
+            <span class="def">An automated check that fails the build when scores genuinely drop — and stays silent on noise.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">02 · the core idea</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 3 : the rubric (57.082 – 89.151) ============ -->
+  <section id="s3" class="clip" data-start="57.082" data-duration="32.069">
+    <div class="scene-inner" id="s3-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Station 1 — the rubric<span class="u" id="s3-u"></span></h1>
+          <div id="s3-card" class="panel">
+            <span class="cap">one answer, graded dimension by dimension</span>
+            <div class="crow" id="cr1"><span class="cn">accuracy</span><span class="cs">0–5</span><span class="cw">× 0.5 weight</span></div>
+            <div class="crow" id="cr2"><span class="cn">evidence</span><span class="cs">0–5</span><span class="cw">× 0.3 weight</span></div>
+            <div class="crow" id="cr3"><span class="cn">tone</span><span class="cs">0–5</span><span class="cw">× 0.2 weight</span></div>
+          </div>
+          <div id="s3-anchor">an <b>anchor</b> pins each level down: <b>“4 = right idea, one factual slip”</b> — so a 4 means the same thing on every run</div>
+          <div id="s3-quote">
+            <div class="qchip"><span class="qm">evidence quote (required): </span>“…because photosynthesis happens in the chloroplasts”</div>
+          </div>
+          <div id="s3-total">weighted overall: <b>3.8</b> — one big opinion split into graded parts is <span class="teal">far less noisy</span></div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-rubric">
+            <span class="term">rubric</span>
+            <span class="def">A written marking scheme: the dimensions, the scale, and what each score means.</span>
+          </div>
+          <div class="kcard blue" id="kc-anchor">
+            <span class="term">anchor</span>
+            <span class="def">A plain description of what a specific score looks like — it makes scores comparable across runs.</span>
+          </div>
+          <div class="kcard" id="kc-evidence">
+            <span class="term">evidence quote</span>
+            <span class="def">The exact words from the answer that earned the score — verdicts become auditable by eye.</span>
+          </div>
+          <div class="kcard amber" id="kc-decomp">
+            <span class="term">rubric decomposition</span>
+            <span class="def">Splitting “how good is this?” into small weighted judgements — each one checkable, each one arguable.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">03 · the rubric</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 4 : pairwise, both orders (89.151 – 128.451) ============ -->
+  <section id="s4" class="clip" data-start="89.151" data-duration="39.301">
+    <div class="scene-inner" id="s4-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Pairwise judging — in both orders<span class="u" id="s4-u"></span></h1>
+          <div id="s4-duel">
+            <div class="acard a" id="ac-a"><span class="tag blue">Answer A</span>“Refunds post within 5 business days of return receipt, to the original payment method.”</div>
+            <div class="acard b" id="ac-b"><span class="tag dim">Answer B</span>“soon”</div>
+          </div>
+          <div id="s4-passes">
+            <div class="pass" id="p1"><span class="p">pass 1 — presented (A, B)</span><span class="v amber" id="p1v">judge: A wins</span></div>
+            <div class="pass flip" id="p2"><span class="p">pass 2 — presented (B, A)</span><span class="v" id="p2v">judge: B wins — FLIPPED</span></div>
+          </div>
+          <div id="s4-result">
+            <span class="big" id="s4-score">A scores 0.5 — a tie, not a wrong 0 or 1</span>
+            <span class="dim" id="s4-rate">position_bias_rate: 1 flip counted</span>
+          </div>
+          <div id="s4-biases">
+            <span class="chip red" id="b1">position bias — reading order</span>
+            <span class="chip red" id="b2">verbosity bias — length ≠ quality</span>
+            <span class="chip red" id="b3">self-preference — its own style</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-pairwise">
+            <span class="term">pairwise judging</span>
+            <span class="def">Show the judge two answers and ask which is better — models compare more reliably than they score.</span>
+          </div>
+          <div class="kcard red" id="kc-position">
+            <span class="term">position bias</span>
+            <span class="def">Favoring the answer read first. VerdictAI runs (A,B) and (B,A) and counts the flips.</span>
+          </div>
+          <div class="kcard red" id="kc-verbosity">
+            <span class="term">verbosity bias</span>
+            <span class="def">Preferring longer answers. Measured as the slope of score vs length, with a statistical test.</span>
+          </div>
+          <div class="kcard red" id="kc-selfpref">
+            <span class="term">self-preference</span>
+            <span class="def">Grading its own model family’s style more kindly — those items are flagged for review.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">04 · both orders</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 5 : kappa (128.451 – 168.883) ============ -->
+  <section id="s5" class="clip" data-start="128.451" data-duration="40.431">
+    <div class="scene-inner" id="s5-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Cohen’s kappa — agreement beyond luck<span class="u teal" id="s5-u"></span></h1>
+          <div id="s5-formula">kappa = <span class="fr">(p_o − p_e) / (1 − p_e)</span></div>
+          <div id="s5-worked" class="panel">
+            <span class="cap">the worked example — pinned by a test</span>
+            <div class="wrow judge" id="wj"><span class="wl">judge grades</span><span class="cell">0</span><span class="cell">0</span><span class="cell">1</span><span class="cell">1</span></div>
+            <div class="wrow human" id="wh"><span class="wl">human grades</span><span class="cell">0</span><span class="cell">1</span><span class="cell">1</span><span class="cell">1</span></div>
+          </div>
+          <div id="s5-calc">
+            <span id="c1">agree 3/4 → <b class="amber">p_o 0.75</b></span>
+            <span id="c2">luck → <b class="blue">p_e 0.50</b></span>
+            <span id="s5-kappa">kappa = 0.5</span>
+          </div>
+          <div id="s5-scale">
+            <div class="bartrack">
+              <div class="mark" id="kmark" style="left: 49.5%;"></div>
+            </div>
+            <span class="scalelbl" style="left: 0;">0 · coin flip</span>
+            <span class="scalelbl" style="left: 47%;">0.5 · moderate</span>
+            <span class="scalelbl" style="right: 0;">1 · perfect</span>
+          </div>
+          <div id="s5-coin">
+            <div class="mini" id="coin1"><span class="h">why not raw agreement?</span>Two graders flipping coins still agree a quarter of the time — kappa subtracts that luck.</div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-kappa">
+            <span class="term">Cohen’s kappa</span>
+            <span class="def">Agreement between two graders beyond luck. 0 ≈ a coin flip, 1 = perfect.</span>
+          </div>
+          <div class="kcard blue" id="kc-po">
+            <span class="term">observed agreement (p_o)</span>
+            <span class="def">The raw fraction of items graded identically.</span>
+          </div>
+          <div class="kcard blue" id="kc-pe">
+            <span class="term">chance agreement (p_e)</span>
+            <span class="def">The agreement their scoring habits would produce by luck alone.</span>
+          </div>
+          <div class="kcard" id="kc-qwk">
+            <span class="term">weighted kappa (QWK)</span>
+            <span class="def">Kappa with partial credit for ordered 0–5 scales — rating a 4 as a 5 is a small miss.</span>
+          </div>
+          <div class="kcard" id="kc-spearman">
+            <span class="term">Spearman correlation</span>
+            <span class="def">Do the two graders rank items in the same order? −1 reversed, 0 none, 1 identical.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">05 · agreement beyond luck</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 6 : isotonic + PAV (168.883 – 210.765) ============ -->
+  <section id="s6" class="clip" data-start="168.883" data-duration="41.882">
+    <div class="scene-inner" id="s6-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Curving the grades — isotonic regression<span class="u" id="s6-u"></span></h1>
+          <div id="s6-chart">
+            <div class="axis y"></div><div class="axis x"></div>
+            <span class="axlbl" style="left: 6px; top: 4px;">human score →</span>
+            <span class="axlbl" style="left: 46%; top: 392px;">judge score →</span>
+            <div class="dot" id="d1" style="left: 90px;  top: 330px;"></div>
+            <div class="dot" id="d2" style="left: 210px; top: 290px;"></div>
+            <div class="dot" id="d3" style="left: 330px; top: 240px;"></div>
+            <div class="dot" id="d4" style="left: 450px; top: 180px;"></div>
+            <div class="dot" id="d5" style="left: 570px; top: 150px;"></div>
+            <div class="step" id="st-a" style="left: 60px;  top: 344px; width: 100px;"></div>
+            <div class="step" id="st-b" style="left: 180px; top: 304px; width: 100px;"></div>
+            <div class="step" id="st-c" style="left: 300px; top: 254px; width: 100px;"></div>
+            <div class="step" id="st-d" style="left: 420px; top: 194px; width: 100px;"></div>
+            <div class="step" id="st-e" style="left: 540px; top: 164px; width: 120px;"></div>
+            <div class="steplink" id="sl-a" style="left: 156px; top: 304px; height: 40px;"></div>
+            <div class="steplink" id="sl-b" style="left: 276px; top: 254px; height: 50px;"></div>
+            <div class="steplink" id="sl-c" style="left: 396px; top: 194px; height: 60px;"></div>
+            <div class="steplink" id="sl-d" style="left: 516px; top: 164px; height: 30px;"></div>
+          </div>
+          <div id="s6-kink">judge says 5, humans say 3.5 — saturation</div>
+          <div id="s6-pav"><b>PAV:</b> walk left to right; whenever a block dips below its neighbor, pool them and average — until the staircase only climbs. The report prints agreement before → after, so overfitting shows itself.</div>
+          <div id="s6-right">
+            <div class="mini" id="mn1"><span class="h">one rule</span>higher must never become lower — no curve shape assumed</div>
+            <div class="mini fixture" id="mn2"><span class="h">pinned fixture</span>query 2.5 → 3.75 (interpolated between fitted blocks)</div>
+            <div class="mini" id="mn3"><span class="h">the alternative</span>Platt scaling fits one rigid sigmoid — real judge error is messier</div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-isotonic">
+            <span class="term">isotonic regression</span>
+            <span class="def">The best never-decreasing mapping from judge scores to human scores — a teacher curving marks, with no assumed shape.</span>
+          </div>
+          <div class="kcard amber" id="kc-pav">
+            <span class="term">PAV algorithm</span>
+            <span class="def">Pool-adjacent-violators: the O(n) way to compute that fit, implemented by hand in ~20 lines.</span>
+          </div>
+          <div class="kcard" id="kc-curve">
+            <span class="term">calibration curve</span>
+            <span class="def">Judge score in → human score out. Perfectly calibrated lies on the diagonal; this judge bulges.</span>
+          </div>
+          <div class="kcard blue" id="kc-platt">
+            <span class="term">Platt scaling</span>
+            <span class="def">The parametric alternative — one sigmoid, fine below ~50 labels, but it can only stretch and squeeze.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">06 · curving the grades</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 7 : golden datasets + decontamination (210.765 – 254.674) ============ -->
+  <section id="s7" class="clip" data-start="210.765" data-duration="43.909">
+    <div class="scene-inner" id="s7-inner">
+      <div class="board">
+        <div class="main">
+          <h1>A better exam — and no leaking<span class="u" id="s7-u"></span></h1>
+          <div id="s7-grid">
+            <div class="dimrow" id="g-row1">
+              <span class="gchip">math-word-problems</span><span class="gchip">support-triage</span><span class="gchip">summarization</span>
+            </div>
+            <div class="dimrow" id="g-row2">
+              <span class="gchip">beginner</span><span class="gchip">terse expert</span><span class="gchip">hard difficulty</span><span class="gchip edge">hidden instruction</span>
+            </div>
+            <div id="s7-cells">
+              <div class="cell7" id="c1"></div><div class="cell7" id="c2"></div><div class="cell7" id="c3"></div><div class="cell7" id="c4"></div>
+              <div class="cell7" id="c5"></div><div class="cell7" id="c6"></div><div class="cell7" id="c7"></div><div class="cell7" id="c8"></div>
+            </div>
+          </div>
+          <div id="s7-manifest" class="panel">
+            <span class="cap">ships like code</span>
+            <span class="mfile">dataset-v1.jsonl  ·  80 items · seed 42</span>
+            <span class="mfile">manifest-v1.json  ·  sha256 per file</span>
+            <span class="mfile">CHANGELOG.md      ·  + v1 entry</span>
+          </div>
+          <div id="s7-leak">
+            <div class="panel">
+              <span class="cap">decontamination check vs corpus</span>
+              <div class="leakline" id="leak-q">exam question: “What safety step applies when the <span class="gram">refrigerant charge must be checked with manifold gauges</span>?”</div>
+            </div>
+            <div id="s7-dropped">DROPPED — shares 8 consecutive words with the corpus (8-gram overlap)</div>
+          </div>
+          <div id="s7-rule">don’t let the exam leak into the textbook</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-golden7">
+            <span class="term">golden dataset</span>
+            <span class="def">A fixed, versioned set of test questions with known-good answers — the exam every version sits.</span>
+          </div>
+          <div class="kcard blue" id="kc-coverage">
+            <span class="term">coverage matrix</span>
+            <span class="def">Every promised kind of question gets a cell; a test asserts no cell is left empty.</span>
+          </div>
+          <div class="kcard" id="kc-ngram">
+            <span class="term">n-gram overlap</span>
+            <span class="def">A run of n consecutive words appearing in both texts — eight in a row is a quote, not a coincidence.</span>
+          </div>
+          <div class="kcard amber" id="kc-decon">
+            <span class="term">decontamination</span>
+            <span class="def">Dropping eval items too similar to the corpus the model may have memorised.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">07 · the exam</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 8 : the alarm (254.674 – 300.119) ============ -->
+  <section id="s8" class="clip" data-start="254.674" data-duration="45.445">
+    <div class="scene-inner" id="s8-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The alarm — is the drop real, or luck?<span class="u" id="s8-u"></span></h1>
+          <div id="s8-snaps">
+            <div class="snap" id="sn1"><span class="v">baseline-v1</span><span class="sha">sha256 9fc03f63…</span><span class="meta">80 items · append-only snapshot</span></div>
+            <div class="snap" id="sn2"><span class="v">candidate-v2</span><span class="sha">sha256 9fc03f63…</span><span class="meta">same exam — same hash, so the compare is fair</span></div>
+          </div>
+          <div id="s8-delta">paired deltas, item by item: <b>baseline − candidate</b> · mean delta <b class="amber">+0.93</b> (candidate worse) · bootstrap: 2,000 resamples → 95% CI</div>
+          <div id="s8-ci">
+            <div class="cibar">
+              <div class="axis"></div>
+              <div class="zero"></div><span class="zero-lbl">0</span>
+              <span class="ilbl" id="ci-lbl" style="left: 55%;">candidate-v2 · CI [0.84, 1.01] — excludes 0</span>
+              <div class="int" id="ci-reg" style="left: 62%; width: 20%;"></div>
+              <span class="ilbl" id="ci-lbl2" style="left: 24%; top: 44px;">noise run · CI includes 0</span>
+              <div class="int noise" id="ci-noise" style="left: 20%; width: 14%;"></div>
+            </div>
+          </div>
+          <div id="s8-verdict">
+            <div id="s8-exit">EXIT 1</div>
+            <div id="s8-noise">noise: no_change → exit 0 — passes in silence</div>
+          </div>
+          <div id="s8-webhook"><b>gate rule:</b> CI clears the threshold <b>and</b> effect size (Cliff’s delta 1.0) clears the floor → regression → build fails, <b>webhook alert</b> fires. <span class="teal">exit code — the number a program returns to the shell: 0 = pass, 1 = fail.</span></div>
+        </div>
+        <div class="rail">
+          <div class="kcard blue" id="kc-baseline">
+            <span class="term">baseline</span>
+            <span class="def">The reference run you compare against — usually the last version you trusted.</span>
+          </div>
+          <div class="kcard" id="kc-snapshot">
+            <span class="term">snapshot</span>
+            <span class="def">One append-only record of a full run: model version, dataset hash, every per-item score.</span>
+          </div>
+          <div class="kcard" id="kc-delta">
+            <span class="term">paired delta</span>
+            <span class="def">Per item: baseline minus candidate. Pairing cancels item difficulty.</span>
+          </div>
+          <div class="kcard amber" id="kc-bootstrap">
+            <span class="term">bootstrap confidence interval</span>
+            <span class="def">Resample the deltas 2,000 times; where the mean lands 95% of the time. Excludes 0 → unlikely luck.</span>
+          </div>
+          <div class="kcard" id="kc-effect">
+            <span class="term">effect size (Cliff’s delta)</span>
+            <span class="def">How big the change is: 1.0 means every item got worse. Guards against tiny “significant” shifts.</span>
+          </div>
+          <div class="kcard blue" id="kc-wilcoxon">
+            <span class="term">Wilcoxon signed-rank</span>
+            <span class="def">A rank-based paired test — the small-sample backup to the bootstrap.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">08 · the gate</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 9 : the numbers (300.119 – 341.189) ============ -->
+  <section id="s9" class="clip" data-start="300.119" data-duration="41.071">
+    <div class="scene-inner" id="s9-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Measured, not claimed<span class="u teal" id="s9-u"></span></h1>
+          <div id="s9-grid">
+            <div class="stat" id="st-a"><span class="n" id="n-a">0</span><span class="t">tests pass offline</span><span class="w">no API key, no network — under two seconds</span></div>
+            <div class="stat" id="st-b"><span class="n" id="n-b">0</span><span class="t">kappa fixture</span><span class="w">the hand-computed worked example, pinned</span></div>
+            <div class="stat" id="st-c"><span class="n" id="n-c">2/7</span><span class="t">QWK fixture</span><span class="w">quadratic weighted kappa, by hand</span></div>
+            <div class="stat" id="st-d"><span class="n amber" id="n-d">0</span><span class="t">planted drop, caught</span><span class="w">replay at 75% quality: mean 5.00 → 4.07</span></div>
+            <div class="stat" id="st-e"><span class="n" id="n-e" style="font-size: 44px; padding-top: 8px;">[0.84, 1.01]</span><span class="t">bootstrap CI</span><span class="w">far above zero — not luck</span></div>
+            <div class="stat" id="st-f"><span class="n red" id="n-f">exit 1</span><span class="t">gate verdict</span><span class="w">regression blocks the build; noise exits 0</span></div>
+          </div>
+          <div id="s9-note">the crime was planted: a replay adapter pretends to be a model having a bad day — the gate catches it deterministically</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-replay">
+            <span class="term">replay adapter</span>
+            <span class="def">Replays golden answers, deterministically degraded — a simulation of a model having a bad day.</span>
+          </div>
+          <div class="kcard" id="kc-mock">
+            <span class="term">offline mock test</span>
+            <span class="def">Every network touch replaced by a scripted fake — real statistics, zero flakes, zero secrets.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">09 · the numbers</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 10 : the front door (341.189 – 368.827) ============ -->
+  <section id="s10" class="clip" data-start="341.189" data-duration="27.638">
+    <div class="scene-inner" id="s10-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The lab has a front door<span class="u" id="s10-u"></span></h1>
+          <div id="s10-api" class="panel">
+            <span class="cap">the same harness over HTTP</span>
+            <span class="apiline" id="api1"><span class="m">POST</span> /v1/eval-runs → <span class="r">202 · run_id</span></span>
+            <span class="apiline" id="api2"><span class="m">GET</span> /v1/eval-runs/{run_id} → <span class="r">running… succeeded</span></span>
+            <span class="apiline" id="api3"><span class="m">POST</span> /v1/eval-runs/{run_id}/gate → <span class="r">{ passed, exit_code }</span></span>
+          </div>
+          <div id="s10-wh">
+            <div class="whcard" id="wh1">webhook on completion<span class="sig">X-VerdictAI-Signature: sha256=9c1f… — HMAC of the body; verify over the raw bytes</span></div>
+          </div>
+          <div id="s10-keys"><b>API keys</b> arrive in a header; the service stores only their <b>SHA-256 hashes</b> and compares in constant time.</div>
+          <div id="s10-corr">
+            <div class="corrchip" id="corr1">X-Correlation-ID: ci-run-4187</div>
+            <span class="cnote" id="corr2">echoed on every response — one run’s story stays grep-able across systems</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-fastapi">
+            <span class="term">FastAPI</span>
+            <span class="def">A Python HTTP framework — here, a thin async skin over the same offline harness.</span>
+          </div>
+          <div class="kcard" id="kc-evalrun">
+            <span class="term">eval run</span>
+            <span class="def">One full scoring pass: a candidate model over one dataset version, every item judged.</span>
+          </div>
+          <div class="kcard" id="kc-webhook">
+            <span class="term">webhook</span>
+            <span class="def">A “call me back” URL — the server POSTs the event instead of you polling.</span>
+          </div>
+          <div class="kcard amber" id="kc-hmac">
+            <span class="term">HMAC signature</span>
+            <span class="def">Body hashed with a shared secret — the receiver can prove it wasn’t forged or altered.</span>
+          </div>
+          <div class="kcard" id="kc-keys">
+            <span class="term">API-key auth · SHA-256 at rest</span>
+            <span class="def">Keys checked per request; only their SHA-256 hashes are ever stored.</span>
+          </div>
+          <div class="kcard blue" id="kc-corr">
+            <span class="term">correlation ID</span>
+            <span class="def">A client-supplied ID echoed on every response — one journey, greppable across systems.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">10 · over HTTP</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 11 : recap (368.827 – 409.877) ============ -->
+  <section id="s11" class="clip" data-start="368.827" data-duration="41.05">
+    <div class="scene-inner" id="s11-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The 30-second recap<span class="u teal" id="s11-u"></span></h1>
+          <div id="s11-list">
+            <div class="r11" id="r1"><span class="dot">1</span><span>The judge grades with a written rubric — anchored criteria, quoted evidence. Not vibes.</span></div>
+            <div class="r11" id="r2"><span class="dot">2</span><span>Comparisons run in both orders — position, verbosity and self-preference bias are measured.</span></div>
+            <div class="r11" id="r3"><span class="dot">3</span><span>Kappa checks the judge against humans, beyond luck — our worked example: 0.5.</span></div>
+            <div class="r11" id="r4"><span class="dot">4</span><span>Isotonic regression (PAV) curves judge scores onto the human scale.</span></div>
+            <div class="r11" id="r5"><span class="dot">5</span><span>Golden datasets cover a grid, are decontaminated, and ship versioned with hashes.</span></div>
+            <div class="r11" id="r6"><span class="dot">6</span><span>The gate separates real regressions from noise — exit 1 only for the real ones.</span></div>
+          </div>
+          <div id="s11-end">
+            <span class="big">VerdictAI — nothing is trusted without a number.</span>
+            <span class="small">GLOSSARY.md in the repo root defines all 67 terms.</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-learn">
+            <span class="term">now explain it to someone else</span>
+            <span class="def">That was the success metric. Start with the four stations: grade, check, build the exam, gate the release.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">11 · recap</div>
+    </div>
+  </section>
+
+  <!-- ================= AUDIO ================= -->
+  <!-- music bed: steady & clean, looped back-to-back, quiet under narration -->
+  <audio id="music-1" data-start="0" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-2" data-start="117.384" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-3" data-start="234.768" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-4" data-start="352.152" data-duration="57.725" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+
+  <!-- narration: one WAV per scene, scene lengths derived from these (lead 0.35 / tail 0.45) -->
+  <audio id="vo-1" data-start="0.35" data-duration="30.543" data-track-index="3" data-volume="1" src="assets/voiceover/voice_01.wav"></audio>
+  <audio id="vo-2" data-start="31.693" data-duration="24.939" data-track-index="4" data-volume="1" src="assets/voiceover/voice_02.wav"></audio>
+  <audio id="vo-3" data-start="57.432" data-duration="31.269" data-track-index="5" data-volume="1" src="assets/voiceover/voice_03.wav"></audio>
+  <audio id="vo-4" data-start="89.501" data-duration="38.501" data-track-index="6" data-volume="1" src="assets/voiceover/voice_04.wav"></audio>
+  <audio id="vo-5" data-start="128.801" data-duration="39.631" data-track-index="7" data-volume="1" src="assets/voiceover/voice_05.wav"></audio>
+  <audio id="vo-6" data-start="169.233" data-duration="41.082" data-track-index="8" data-volume="1" src="assets/voiceover/voice_06.wav"></audio>
+  <audio id="vo-7" data-start="211.115" data-duration="43.109" data-track-index="9" data-volume="1" src="assets/voiceover/voice_07.wav"></audio>
+  <audio id="vo-8" data-start="255.024" data-duration="44.645" data-track-index="11" data-volume="1" src="assets/voiceover/voice_08.wav"></audio>
+  <audio id="vo-9" data-start="300.469" data-duration="40.271" data-track-index="12" data-volume="1" src="assets/voiceover/voice_09.wav"></audio>
+  <audio id="vo-10" data-start="341.539" data-duration="26.837" data-track-index="13" data-volume="1" src="assets/voiceover/voice_10.wav"></audio>
+  <audio id="vo-11" data-start="369.177" data-duration="40.250" data-track-index="14" data-volume="1" src="assets/voiceover/voice_11.wav"></audio>
+
+  <!-- sparse SFX (5 cues in ~6.8 minutes) -->
+  <audio id="sfx-1" data-start="103.151" data-duration="0.12" data-track-index="20" data-volume="0.55" src="assets/sfx/interface/drop_001.ogg"></audio>
+  <audio id="sfx-2" data-start="152.451" data-duration="0.11" data-track-index="21" data-volume="0.5" src="assets/sfx/interface/drop_002.ogg"></audio>
+  <audio id="sfx-3" data-start="236.765" data-duration="0.11" data-track-index="22" data-volume="0.5" src="assets/sfx/interface/drop_001.ogg"></audio>
+  <audio id="sfx-4" data-start="286.174" data-duration="0.12" data-track-index="23" data-volume="0.6" src="assets/sfx/impact/impactSoft_medium_000.ogg"></audio>
+  <audio id="sfx-5" data-start="397.327" data-duration="0.11" data-track-index="24" data-volume="0.4" src="assets/sfx/interface/drop_002.ogg"></audio>
+</div>
+
+<script>
+  // Scene timing constants (derived from measured voiceover WAV durations)
+  const S1 = 0, S2 = 31.343, S3 = 57.082, S4 = 89.151, S5 = 128.451,
+        S6 = 168.883, S7 = 210.765, S8 = 254.674, S9 = 300.119,
+        S10 = 341.189, S11 = 368.827;
+  const END = 409.88;
+
+  const tl = gsap.timeline({ paused: true, defaults: { ease: "power2.out" } });
+
+  // helpers (all on inner wrappers — never on .clip elements)
+  const IN = (sel, at, dy = 18, dur = 0.55) =>
+    tl.fromTo(sel, { opacity: 0, y: dy }, { opacity: 1, y: 0, duration: dur }, at);
+  const SC = (sel, at, dur = 0.6) =>
+    tl.fromTo(sel, { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: dur }, at);
+  const OUT = (sel, at) => tl.to(sel, { opacity: 0, duration: 0.45, ease: "power1.in" }, at);
+
+  // ---- Scene 1 (0 – 31.343) --------------------------------------------
+  IN("#s1-title", 0.15, 24, 0.7);
+  IN("#s1-flow1", 2.0);
+  IN("#kc-llm", 3.6);
+  tl.fromTo("#s1-flow1 .stamp", { opacity: 0, scale: 1.4 }, { opacity: 1, scale: 1, duration: 0.4 }, 4.6);
+  IN("#kc-judge", 5.6);
+  IN("#s1-question", 8.2, 26, 0.7);
+  IN("#tic1", 11.6);
+  IN("#tic2", 14.6);
+  IN("#tic3", 17.6);
+  IN("#s1-promise", 22.5, 16, 0.6);
+  OUT("#s1-inner", S2 - 0.55);
+
+  // ---- Scene 2 (31.343 – 57.082) ----------------------------------------
+  IN("#s2-inner > .board > .main > h1", S2 + 0.15, 22, 0.6);
+  SC("#s2-u", S2 + 0.6);
+  IN("#s2-analogy", S2 + 3.2);
+  IN("#st1", S2 + 8.4, 14, 0.45);
+  IN("#pa1", S2 + 10.4, 10, 0.3);
+  IN("#st2", S2 + 10.9, 14, 0.45);
+  IN("#kc-calibration", S2 + 11.4);
+  IN("#pa2", S2 + 12.9, 10, 0.3);
+  IN("#st3", S2 + 13.4, 14, 0.45);
+  IN("#kc-golden", S2 + 14.4);
+  IN("#pa3", S2 + 15.9, 10, 0.3);
+  IN("#st4", S2 + 16.4, 14, 0.45);
+  IN("#kc-gate", S2 + 17.4);
+  IN("#s2-note", S2 + 20.5, 12, 0.45);
+  OUT("#s2-inner", S3 - 0.55);
+
+  // ---- Scene 3 (57.082 – 89.151) ----------------------------------------
+  IN("#s3-inner > .board > .main > h1", S3 + 0.15, 22, 0.6);
+  SC("#s3-u", S3 + 0.6);
+  IN("#kc-rubric", S3 + 1.8);
+  IN("#s3-card", S3 + 4.2);
+  IN("#cr1", S3 + 5.6, 10, 0.4);
+  IN("#cr2", S3 + 6.4, 10, 0.4);
+  IN("#cr3", S3 + 7.2, 10, 0.4);
+  IN("#s3-anchor", S3 + 11.6);
+  IN("#kc-anchor", S3 + 12.6);
+  IN("#s3-quote", S3 + 16.8);
+  IN("#kc-evidence", S3 + 17.8);
+  IN("#kc-decomp", S3 + 23.0);
+  IN("#s3-total", S3 + 26.0, 14, 0.5);
+  OUT("#s3-inner", S4 - 0.55);
+
+  // ---- Scene 4 (89.151 – 128.451) ----------------------------------------
+  IN("#s4-inner > .board > .main > h1", S4 + 0.15, 22, 0.6);
+  SC("#s4-u", S4 + 0.6);
+  IN("#ac-a", S4 + 1.4);
+  IN("#ac-b", S4 + 2.2);
+  IN("#kc-pairwise", S4 + 4.6);
+  IN("#p1", S4 + 9.6);
+  tl.fromTo("#p1v", { opacity: 0 }, { opacity: 1, duration: 0.35 }, S4 + 11.0);
+  tl.to("#ac-a", { x: 560, duration: 0.8, ease: "power2.inOut" }, S4 + 14.2);
+  tl.to("#ac-b", { x: -560, duration: 0.8, ease: "power2.inOut" }, S4 + 14.2);
+  IN("#p2", S4 + 15.4);
+  tl.fromTo("#p2v", { opacity: 0 }, { opacity: 1, duration: 0.35 }, S4 + 16.8);
+  IN("#kc-position", S4 + 19.4);
+  IN("#s4-result", S4 + 22.4);
+  IN("#b1", S4 + 23.2, 10, 0.35);
+  IN("#kc-verbosity", S4 + 28.4);
+  IN("#b2", S4 + 29.4, 10, 0.35);
+  IN("#kc-selfpref", S4 + 33.4);
+  IN("#b3", S4 + 34.4, 10, 0.35);
+  OUT("#s4-inner", S5 - 0.55);
+
+  // ---- Scene 5 (128.451 – 168.883) ----------------------------------------
+  IN("#s5-inner > .board > .main > h1", S5 + 0.15, 22, 0.6);
+  SC("#s5-u", S5 + 0.6);
+  IN("#coin1", S5 + 5.6);
+  IN("#s5-formula", S5 + 9.8);
+  IN("#kc-kappa", S5 + 10.8);
+  IN("#s5-worked", S5 + 14.8);
+  IN("#wj", S5 + 15.8, 8, 0.4);
+  IN("#wh", S5 + 17.2, 8, 0.4);
+  IN("#c1", S5 + 20.2, 10, 0.4);
+  IN("#kc-po", S5 + 21.0);
+  IN("#c2", S5 + 22.4, 10, 0.4);
+  IN("#kc-pe", S5 + 23.2);
+  IN("#s5-kappa", S5 + 24.4, 14, 0.5);
+  IN("#s5-scale", S5 + 26.4, 12, 0.45);
+  IN("#kc-qwk", S5 + 30.6);
+  IN("#kc-spearman", S5 + 33.6);
+  OUT("#s5-inner", S6 - 0.55);
+
+  // ---- Scene 6 (168.883 – 210.765) ----------------------------------------
+  IN("#s6-inner > .board > .main > h1", S6 + 0.15, 22, 0.6);
+  SC("#s6-u", S6 + 0.6);
+  IN("#s6-chart", S6 + 1.4);
+  ["#d1", "#d2", "#d3", "#d4", "#d5"].forEach((sel, i) => IN(sel, S6 + 2.4 + i * 0.5, 8, 0.3));
+  IN("#kc-isotonic", S6 + 7.6);
+  ["#st-a", "#st-b", "#st-c", "#st-d", "#st-e"].forEach((sel, i) => SC(sel, S6 + 9.6 + i * 0.45, 0.4));
+  ["#sl-a", "#sl-b", "#sl-c", "#sl-d"].forEach((sel, i) => tl.fromTo(sel, { opacity: 0, scaleY: 0, transformOrigin: "top center" }, { opacity: 1, scaleY: 1, duration: 0.3 }, S6 + 9.8 + i * 0.45));
+  IN("#s6-kink", S6 + 14.6, 10, 0.4);
+  IN("#s6-pav", S6 + 19.8);
+  IN("#kc-pav", S6 + 21.2);
+  IN("#kc-curve", S6 + 26.0);
+  IN("#mn2", S6 + 28.4);
+  IN("#mn3", S6 + 33.4);
+  IN("#kc-platt", S6 + 34.4);
+  IN("#mn1", S6 + 8.4);
+  OUT("#s6-inner", S7 - 0.55);
+
+  // ---- Scene 7 (210.765 – 254.674) ----------------------------------------
+  IN("#s7-inner > .board > .main > h1", S7 + 0.15, 22, 0.6);
+  SC("#s7-u", S7 + 0.6);
+  IN("#kc-golden7", S7 + 2.8);
+  IN("#g-row1", S7 + 6.4);
+  IN("#g-row2", S7 + 7.4);
+  IN("#s7-cells", S7 + 8.6);
+  ["#c1", "#c2", "#c3", "#c4", "#c5", "#c6", "#c7", "#c8"].forEach((sel, i) =>
+    tl.fromTo(sel, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3 }, S7 + 9.2 + i * 0.22));
+  IN("#kc-coverage", S7 + 12.6);
+  IN("#s7-manifest", S7 + 16.8);
+  IN("#kc-decon", S7 + 21.6);
+  IN("#s7-leak", S7 + 22.6);
+  IN("#kc-ngram", S7 + 24.4);
+  tl.fromTo("#s7-dropped", { opacity: 0, y: 12, rotation: -2 }, { opacity: 1, y: 0, rotation: -2, duration: 0.45 }, S7 + 27.0);
+  IN("#s7-rule", S7 + 31.4, 16, 0.6);
+  OUT("#s7-inner", S8 - 0.55);
+
+  // ---- Scene 8 (254.674 – 300.119) ----------------------------------------
+  IN("#s8-inner > .board > .main > h1", S8 + 0.15, 22, 0.6);
+  SC("#s8-u", S8 + 0.6);
+  IN("#kc-baseline", S8 + 2.6);
+  IN("#sn1", S8 + 3.2);
+  IN("#kc-snapshot", S8 + 4.4);
+  IN("#sn2", S8 + 5.2);
+  IN("#kc-delta", S8 + 9.4);
+  IN("#s8-delta", S8 + 10.2);
+  IN("#kc-bootstrap", S8 + 14.6);
+  IN("#s8-ci", S8 + 16.2);
+  SC("#ci-reg", S8 + 17.6, 0.5);
+  IN("#ci-lbl", S8 + 18.4, 8, 0.4);
+  SC("#ci-noise", S8 + 22.0, 0.5);
+  IN("#ci-lbl2", S8 + 22.8, 8, 0.4);
+  IN("#kc-effect", S8 + 25.0);
+  IN("#kc-wilcoxon", S8 + 27.0);
+  IN("#s8-verdict", S8 + 29.4);
+  tl.fromTo("#s8-exit", { opacity: 0, scale: 1.6, rotation: -8 }, { opacity: 1, scale: 1, rotation: -2, duration: 0.45, ease: "power3.in" }, S8 + 31.3);
+  IN("#s8-noise", S8 + 36.4, 12, 0.5);
+  IN("#s8-webhook", S8 + 33.4, 12, 0.5);
+  OUT("#s8-inner", S9 - 0.55);
+
+  // ---- Scene 9 (300.119 – 341.189) ----------------------------------------
+  IN("#s9-inner > .board > .main > h1", S9 + 0.15, 22, 0.6);
+  SC("#s9-u", S9 + 0.6);
+  const stats = [
+    ["#st-a", "#n-a", 177, 0],
+    ["#st-b", "#n-b", 0.5, 1],
+    ["#st-c", "#n-c", null, null],
+    ["#st-d", "#n-d", 19, 0],
+    ["#st-e", "#n-e", null, null],
+    ["#st-f", "#n-f", null, null]
+  ];
+  stats.forEach(([tile, num, val, dec], i) => {
+    const at = S9 + 2.5 + i * 1.2;
+    IN(tile, at, 14, 0.4);
+    if (val !== null) {
+      const obj = { v: 0 };
+      tl.fromTo(obj, { v: 0 }, {
+        v: val, duration: 1.2, ease: "power1.out",
+        onUpdate: () => { document.querySelector(num).textContent = obj.v.toFixed(dec); }
+      }, at + 0.2);
+    }
+  });
+  IN("#kc-replay", S9 + 11.0);
+  IN("#s9-note", S9 + 24.0, 12, 0.45);
+  IN("#kc-mock", S9 + 26.0);
+  OUT("#s9-inner", S10 - 0.55);
+
+  // ---- Scene 10 (341.189 – 368.827) ----------------------------------------
+  IN("#s10-inner > .board > .main > h1", S10 + 0.15, 22, 0.6);
+  SC("#s10-u", S10 + 0.6);
+  IN("#s10-api", S10 + 2.2);
+  ["#api1", "#api2", "#api3"].forEach((sel, i) => IN(sel, S10 + 3.4 + i * 1.6, 8, 0.35));
+  IN("#kc-fastapi", S10 + 2.6);
+  IN("#kc-evalrun", S10 + 6.0);
+  IN("#s10-wh", S10 + 12.2);
+  IN("#kc-webhook", S10 + 13.0);
+  tl.fromTo("#wh1 .sig", { borderColor: "rgba(245,185,66,0)", color: "rgba(245,185,66,0)" }, { borderColor: "rgba(245,185,66,1)", color: "rgba(245,185,66,1)", duration: 0.5 }, S10 + 16.4);
+  IN("#kc-hmac", S10 + 17.2);
+  IN("#s10-keys", S10 + 21.6);
+  IN("#kc-keys", S10 + 22.4);
+  IN("#s10-corr", S10 + 26.0);
+  IN("#kc-corr", S10 + 26.6);
+  OUT("#s10-inner", S11 - 0.55);
+
+  // ---- Scene 11 (368.827 – 409.88) -----------------------------------------
+  IN("#s11-inner > .board > .main > h1", S11 + 0.15, 22, 0.6);
+  SC("#s11-u", S11 + 0.6);
+  ["#r1", "#r2", "#r3", "#r4", "#r5", "#r6"].forEach((sel, i) => IN(sel, S11 + 2.0 + i * 3.2, 12, 0.45));
+  IN("#s11-end", S11 + 28.5, 16, 0.8);
+  IN("#kc-learn", S11 + 31.5);
+
+  window.__timelines["verdict-lecture"] = tl;
+</script>
+</body>
+</html>

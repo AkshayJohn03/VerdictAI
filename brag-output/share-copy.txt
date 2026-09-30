@@ -1,0 +1,8 @@
+I recorded a whiteboard lecture on my own repo: VerdictAI — who grades the
+grader? Rubric judges run pairwise in both orders, position/verbosity/self-
+preference bias is measured not assumed, Cohen's kappa checks the judge against
+humans (0.5 on the pinned worked example), isotonic regression curves the
+grades by hand with PAV, golden datasets are decontaminated so the exam can't
+leak into the textbook, and a paired-bootstrap-CI gate blocks a planted ~19%
+degradation with exit 1 while noise passes in silence. Under seven minutes,
+every keyword defined on screen. 177 tests pass offline.
