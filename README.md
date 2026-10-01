@@ -1,5 +1,8 @@
 # VerdictAI
 
+[![▶ whiteboard explainer video · 6m50s](https://img.shields.io/badge/%E2%96%B6_whiteboard_explainer-6m50s-E8B44A?style=flat-square&logo=googleplay&logoColor=white)](brag-output/brag.mp4)
+
+
 **LLM-as-Judge with human calibration, eval dataset generation, and regression detection.**
 
 VerdictAI is a production-shaped evaluation harness for LLM systems: it judges model
