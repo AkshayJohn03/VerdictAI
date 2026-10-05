@@ -3,7 +3,7 @@
 [![▶ whiteboard explainer video · 6m50s](https://img.shields.io/badge/%E2%96%B6_whiteboard_explainer-6m50s-E8B44A?style=flat-square&logo=googleplay&logoColor=white)](brag-output/brag.mp4)
 
 
-**LLM-as-Judge with human calibration, eval dataset generation, and regression detection.**
+**LLM-as-Judge with human calibration, eval datasets, regression detection — and the Seam Auditor for multi-agent handoffs.**
 
 VerdictAI is a production-shaped evaluation harness for LLM systems: it judges model
 outputs with rubric-decomposed LLM judges (plus a deterministic offline fallback),
@@ -12,28 +12,155 @@ biases, calibrates judge scores onto the human scale, generates versioned golden
 datasets with leakage control, and gates deploys on statistically defensible
 regression evidence.
 
+Where it goes beyond single-hop eval frameworks: the **Seam Auditor** measures
+agent handoff degradation — did Agent B drop a parameter Agent A produced? what
+is the fidelity halflife of the chain? which node caused the downstream
+collapse? — deterministically, before a single judge token is spent.
+
 Everything runs **fully offline by default** — deterministic mock clients, heuristic
 judges, and hand-rolled statistics (no scipy/sklearn/torch) — and swaps to any
 OpenAI-compatible endpoint with one environment variable.
 
 ```bash
 pip install -e .
-python -m pytest -q        # 100+ offline tests, no network, no API key
-verdict judge --prompt "Answer in JSON: 2+2?" --response '{"answer": "4"}'
+python -m pytest -q        # 228 offline tests, no network, no API key
+verdict audit --steps trace.json --html report.html
 ```
 
 ## 🟢 New to AI? Read this first
 
 **The problem, in human terms.** Companies now use an AI model to grade other AI models ("rate this answer 1-5 for helpfulness"). But that grader is *itself* a fallible machine: it might prefer the first answer it reads, favor longer answers, or grade its own writing more kindly — and nobody checks the grader's work.
 
-**What this project does.** VerdictAI is the quality-control lab for AI answers, in four steps:
+**What this project does.** VerdictAI is the quality-control lab for AI answers, in five steps:
 
 1. **Grade it** — AI answers are scored against a written rubric (like a school marking scheme: "accuracy 0-5, evidence 0-5, tone 0-5") with quoted proof for each score. For "which answer is better?" questions, it grades the pair in *both* orders and de-biases the result — if the verdict flips depending on which answer was read first, that **position bias** is caught and measured.
 2. **Check the grader against humans** — humans grade a sample too. VerdictAI computes how much the AI grader agrees with humans *beyond luck* (Cohen's kappa), finds its tics (does it just like long answers? its own writing style?), and then **re-curves** its scores onto the human scale using isotonic regression — the same idea as a teacher curving exam marks, done with a provably-correct algorithm (PAV) implemented from scratch.
 3. **Make better exam questions** — an automated generator builds golden test sets with real variety (topics × personas × difficulty × nasty edge cases like hidden instructions and unicode tricks), tracks that nothing is missed on a coverage matrix, and strips anything too similar to training data (decontamination) so the exam can't be "memorised".
 4. **Sound the alarm** — every model version's exam scores are snapshotted. When a new version arrives, paired bootstrap confidence intervals decide whether a score drop is a *real regression or noise*; the CI gate fails the build on real regressions and stays silent on noise.
+5. **Audit the seams** — when work moves between agents, every handoff is diffed: what Agent A produced vs what Agent B actually carried forward. Dropped fields, mutated values, and the compounding cost across the chain are measured with zero LLM calls (see [The Seam Auditor](#the-seam-auditor)).
 
-**Measured outcomes:** 177 automated tests pass offline in under two seconds — including hand-computed statistics fixtures (kappa = 0.5 on a worked example, quadratic weighted kappa = 2/7, PAV interpolation 2.5 → 3.75), planted position-bias detected and corrected, bootstrap CIs that correctly flag planted degradations and pass seeded noise, and end-to-end CLI gate runs with correct exit codes. Nothing is trusted without a number.
+**Measured outcomes:** 228 automated tests pass offline in under three seconds — including hand-computed statistics fixtures (kappa = 0.5 on a worked example, quadratic weighted kappa = 2/7, PAV interpolation 2.5 → 3.75), planted position-bias detected and corrected, bootstrap CIs that correctly flag planted degradations and pass seeded noise, planted handoff degradation pinned to exact fidelity/halflife/blame numbers, and end-to-end CLI gate runs with correct exit codes. Nothing is trusted without a number.
+
+---
+
+## The Seam Auditor
+
+DeepEval, Ragas, and most eval frameworks measure **single hops**: a query goes
+in, a context comes back, an answer is scored. Modern pipelines are not single
+hops — they are chains of agents, and the expensive failures live in the
+handoffs. Agent A produces `{"ticket_id": "T-42", "priority": "high"}`; Agent B
+receives `{"ticket_id": "T-42"}`. No individual step "scored badly", so a
+single-hop judge sees nothing — but five seams later the CRM ticket is filed
+without its priority, and every downstream step inherited the loss.
+
+VerdictAI claims that problem: **the Seam Auditor for multi-agent handoffs.**
+
+- **`HandoffDiff`** — for every seam (`prev.output` vs `next.input`): dropped
+  fields, added fields, mutated values (before → after), type changes, and a
+  per-seam fidelity in `[0, 1]`.
+- **Chain fidelity** — the geometric mean across seams, so one catastrophic
+  seam collapses the chain the same way it collapses your pipeline
+  (0.9 × 0.9 × 0.1 < 0.3).
+- **Fidelity halflife** — the number of handoffs until field preservation
+  first drops below 0.5 (`None` if it never does): the compounding-decay
+  curve of your chain, as one number.
+- **Blame** — the worst seam ranked by `(1 − fidelity) × downstream steps`,
+  so the node that both lost the most and poisoned the most work surfaces first.
+
+Zero tokens, zero network, deterministic to the byte.
+
+### 3-minute quickstart
+
+```bash
+pip install -e .
+```
+
+Add the fixture to any test (the plugin registers itself via a `pytest11`
+entry point — no conftest changes):
+
+```python
+# test_pipeline.py
+def test_support_chain(verdict):
+    steps = [
+        {"name": "extractor",
+         "output": {"ticket_id": "T-42", "priority": "high", "customer": "acme"}},
+        {"name": "triage",
+         "input": {"ticket_id": "T-42", "priority": "high"},
+         "output": {"ticket_id": "T-42", "priority": "high"}},
+        {"name": "resolver",
+         "input": {"ticket_id": "T-42"},
+         "output": {"ticket_id": "T-42"}},
+    ]
+    verdict.assert_chain(steps, min_fidelity=0.7)
+```
+
+```bash
+pytest -p no:cacheprovider -q
+```
+
+A failing chain reads like a diagnosis, not a stack trace:
+
+```
+chain fidelity 0.577 < min_fidelity 0.7 across 2 seam(s)
+seam extractor -> triage: fidelity 0.667
+  dropped fields: customer
+seam triage -> resolver: fidelity 0.500
+  dropped fields: priority
+```
+
+Then render the whole chain as a diff grid:
+
+```bash
+verdict audit --steps trace.json --html report.html --min-fidelity 0.7
+```
+
+Steps become columns, dot-notation fields become rows, and every cell is
+color-coded: **red = dropped**, **amber = mutated** (before → after),
+**green = kept**. The header carries per-seam fidelity, chain fidelity, and
+the halflife; a blame table ranks the worst nodes. The report is a single
+static HTML file — inline CSS, no CDN, no JavaScript — so you can attach it
+directly to a PR. Exit code 1 fires below the threshold, which makes
+`verdict audit` a CI gate on its own.
+
+## Deterministic-first
+
+Judge tokens are the most expensive way to say "this output is empty."
+VerdictAI runs an ordered battery of zero-token checks **before** any LLM
+spend: schema conformity (JSON-schema subset or pydantic models inline),
+non-empty + length bounds, JSON validity (markdown-fence tolerant), cosine
+similarity against a reference using an offline hashed bag-of-words embedder
+(no network, no weights), required-field presence, and latency budgets.
+
+Only failures that genuinely benefit from semantic judgment — a schema
+mismatch the model might talk its way out of, a similarity below threshold,
+an unparseable-but-maybe-fenced payload — go on the **escalation list** for
+an LLM judge. Objective failures (empty, over-length, missing required
+field, blown budget) are hard fails with no review needed.
+
+```python
+from verdictai.deterministic import DeterministicSuite
+
+report = DeterministicSuite().run_all(
+    outputs={"answer": '{"ticket_id": "T-1"}'},
+    schema={"answer": {"type": "object", "required": ["ticket_id", "priority"]}},
+    refs={"answer": "ticket T-1 resolved"},
+    budgets={"answer": 2000.0},
+)
+assert report.passed, report.summary()   # prints per-check FAIL/ESCALATE lines
+```
+
+```bash
+verdict suite --schema schema.json --outputs outputs.jsonl
+```
+
+And from the pytest plugin: `verdict.assert_conformant(output, schema)` and
+`verdict.assert_no_regression(outputs, "baseline.json")` — assertions that
+drop into any existing pytest suite with no LLM and no network.
+
+*Trade-off:* the hash embedder is a deterministic bag-of-words proxy, not a
+semantic oracle. It catches "the answer stopped being about the ticket", not
+"the answer stopped being correct" — that residual is exactly what the LLM
+judge escalation path is for.
 
 ---
 
@@ -51,6 +178,9 @@ treats the judge as a first-class measured component:
 4. **Generate** golden datasets that cover a topic × persona × difficulty × edge-case
    grid, decontaminated against your corpus, versioned with sha256 manifests.
 5. **Gate** releases on paired bootstrap CIs + effect sizes, not vibes.
+6. **Audit the seams** between agents — per-handoff fidelity, chain halflife, and
+   blame — deterministically, plus a deterministic-first check battery that
+   reserves LLM judges for genuine ambiguity (see [The Seam Auditor](#the-seam-auditor)).
 
 ## Architecture
 
@@ -93,11 +223,18 @@ flowchart TB
         RUN --> STORE --> DRIFT --> GATE
     end
 
+    subgraph Seams["seam auditing (deterministic, zero tokens)"]
+        TRACE["agent trace\nJSON / JSONL steps"] --> AUD["HandoffAuditor\nHandoffDiff per seam\nfidelity + halflife + blame"]
+        AUD --> DET["DeterministicSuite\nordered zero-token checks\nescalation list for LLM judge"]
+        AUD --> HTML["HtmlDiffReport\nself-contained HTML diff grid"]
+        AUD --> PYT["pytest plugin\nverdict.assert_chain /\nassert_conformant / assert_no_regression"]
+    end
+
     ECHO --> Judges
     OAI --> Judges
     SCH --> RUN
     MET --> ISO
-    CLI["cli.py: judge / pair / calibrate / gen-dataset / regress"]
+    CLI["cli.py: judge / pair / calibrate / gen-dataset / regress / audit / suite"]
 ```
 
 ### Module map
@@ -120,6 +257,10 @@ flowchart TB
 | `regression/runner.py` | `ModelAdapter` protocol, `GoldenRunner`, append-only `SnapshotStore`, offline `OfflineReplayAdapter` |
 | `regression/drift.py` | paired bootstrap CI, Wilcoxon signed-rank (exact small-n / normal + tie correction), Cliff's delta, `DriftDetector` |
 | `regression/gate.py` | CI gate: exit codes, markdown summary, webhook-ready alert JSON |
+| `seams.py` | The Seam Auditor: `HandoffAuditor` diffs every handoff (`prev.output` vs `next.input`) into a `HandoffDiff` (dropped/added/mutated/type-changed + fidelity), `ChainAudit` with geometric-mean chain fidelity, fidelity halflife, and downstream-weighted `blame()`; `audit_json` loads JSON/JSONL traces |
+| `deterministic.py` | `DeterministicSuite` — ordered zero-token checks (schema conformity, content bounds, JSON validity, offline cosine similarity, required fields, latency budgets) with an escalation list for LLM-judge review; `HashEmbeddingClient` deterministic offline embedder |
+| `pytest_plugin.py` | `verdict` pytest fixture (registered via `pytest11` entry point): `assert_chain`, `assert_conformant`, `assert_no_regression`, `audit` — seam-explicit failure messages |
+| `report.py` | `HtmlDiffReport` — self-contained static HTML diff: steps as columns, dot-notation fields as rows, dropped/mutated/kept color coding, deterministic bytes |
 | `service.py` | FastAPI eval-service: async eval runs, gate endpoint, HMAC-signed webhooks, API-key auth |
 
 ## Quickstart
@@ -317,6 +458,17 @@ nothing is mutated. Drift is computed on deltas paired by `item_id`, making runs
 bit-comparable across time. *Trade-off:* storage grows with runs (trivial vs the
 reproducibility win).
 
+**10. Seam auditing is a set operation; judgment is the fallback.**
+"What did Agent A produce vs what did Agent B consume?" is a diff over flattened
+dot-notation keys — measurable with zero tokens, reproducible to the byte, and
+fast enough for every commit. Chain fidelity uses a geometric mean because seam
+losses compound multiplicatively, and blame weights `(1 − fidelity)` by downstream
+steps because a bad handoff early in a chain is worse than the same badness at
+the end. LLM judgment is reserved for what the diff cannot decide (the
+deterministic suite's escalation list). *Trade-off:* field-level fidelity cannot
+see "the value arrived but the meaning was lost" — structural decay is measured
+exactly, and semantic correctness remains the judge's job.
+
 ## Configuration reference
 
 All via environment variables (`VERDICTAI_` prefix) or `.env` — see `.env.example`:
@@ -345,7 +497,11 @@ interpolation, planted position bias detected and de-biased, planted verbosity b
 significant / null data not significant (seeded permutation test), bootstrap CI
 excluding 0 for planted degradation and including 0 for same-distribution noise,
 gate exit codes, full coverage-matrix fill, and decontamination catching a planted
-8-gram overlap.
+8-gram overlap. The Seam Auditor is pinned the same way: planted chains assert
+exact dropped/mutated/type-changed detection, geometric-mean chain fidelity,
+halflife positions on a 5→4→2→1→1→0 chain, and downstream-weighted blame; the
+pytest plugin is exercised through pytest's own `pytester` harness, including a
+failing chain whose exit code and message name the dropped field at the right seam.
 
 ## Production notes
 
@@ -373,6 +529,10 @@ gate exit codes, full coverage-matrix fill, and decontamination catching a plant
   report no CI.
 - Decontamination is word n-gram overlap (n=8 default) — it catches verbatim leakage,
   not paraphrased contamination.
+- Seam fidelity is field-level bookkeeping, not semantics: a field renamed to a
+  different key counts as preserved only if its value surfaces somewhere else in the
+  next input, list comparison samples the first 3 elements (length covers the rest),
+  and a mutated value always lowers fidelity even when the change was intentional.
 - Pointwise/single-turn only today: no multi-turn conversations, no image inputs,
   no cost/latency judging.
 - Pairwise double-order doubles judge cost; ensembles multiply it.
@@ -380,6 +540,7 @@ gate exit codes, full coverage-matrix fill, and decontamination catching a plant
 ## Roadmap
 
 - [ ] Multi-turn conversation judging (trajectory-level rubrics)
+- [ ] Seam-fidelity halflife tracked across model versions (trend alerts on decaying chains)
 - [ ] Judge-of-judges meta-verdict with per-judge reliability weights learned from labels
 - [ ] Cost/latency-aware evaluation slices
 - [ ] Streaming judge evaluation over CI artifacts (GitHub Action wrapping the gate)
