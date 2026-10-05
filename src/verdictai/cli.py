@@ -8,6 +8,11 @@ Subcommands (all run fully offline by default):
 - ``verdict gen-dataset``— generate a versioned golden dataset + manifest
 - ``verdict regress``    — compare two model-version snapshots; ``--gate``
                            makes it a CI gate (exit 1 on regression)
+- ``verdict audit``      — seam-audit an agent trace (JSON/JSONL) for handoff
+                           degradation; ``--html`` writes a diff report and
+                           exit 1 fires below ``--min-fidelity``
+- ``verdict suite``      — run the deterministic-first suite over an outputs
+                           JSONL (schema/refs/latency checks, zero tokens)
 """
 
 from __future__ import annotations
@@ -41,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="verdict",
         description="VerdictAI: LLM-as-judge with human calibration, eval datasets, "
-        "and regression detection.",
+        "regression detection, and deterministic agent handoff (seam) auditing.",
     )
     parser.add_argument("--version", action="version", version=f"verdict {__version__}")
     sub = parser.add_subparsers(dest="command")
@@ -93,6 +98,41 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--min-effect", type=float, default=0.1)
     p_reg.add_argument("--gate", action="store_true", help="CI gate mode: exit 1 on regression")
     p_reg.set_defaults(func=cmd_regress)
+
+    p_audit = sub.add_parser("audit", help="seam-audit an agent trace for handoff degradation")
+    p_audit.add_argument(
+        "--steps",
+        required=True,
+        help="trace file: JSON list, {steps: [...]}, or JSONL of steps",
+    )
+    p_audit.add_argument(
+        "--html", default=None, help="write a self-contained HTML diff report here"
+    )
+    p_audit.add_argument(
+        "--min-fidelity",
+        type=float,
+        default=0.7,
+        help="CI gate mode: exit 1 when chain fidelity is below this (default 0.7)",
+    )
+    p_audit.set_defaults(func=cmd_audit)
+
+    p_suite = sub.add_parser(
+        "suite", help="deterministic-first checks over an outputs JSONL (zero tokens)"
+    )
+    p_suite.add_argument(
+        "--schema",
+        required=True,
+        help="JSON schema file (bare schema or {name: schema})",
+    )
+    p_suite.add_argument(
+        "--outputs",
+        required=True,
+        help="JSONL rows: {\"name\", \"value\", \"latency_ms\"?} per output",
+    )
+    p_suite.add_argument(
+        "--refs", default=None, help="JSON file {name: reference text} for similarity checks"
+    )
+    p_suite.set_defaults(func=cmd_suite)
     return parser
 
 
@@ -259,6 +299,97 @@ def cmd_regress(args: argparse.Namespace) -> int:
     )
     print(report.summary())
     return 0
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    from .report import HtmlDiffReport
+    from .seams import audit_json
+
+    try:
+        chain_audit = audit_json(args.steps)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot load trace: {exc}", file=sys.stderr)
+        return 2
+    print(f"steps: {len(chain_audit.steps)}  seams: {len(chain_audit.handoffs)}")
+    print(f"chain fidelity: {chain_audit.chain_fidelity:.3f}")
+    if chain_audit.fidelity_halflife is None:
+        print("fidelity halflife: never drops below 0.5")
+    else:
+        print(
+            f"fidelity halflife: {chain_audit.fidelity_halflife} handoff(s) "
+            "before preservation drops below 0.5"
+        )
+    for diff in chain_audit.handoffs:
+        line = f"seam {diff.from_step} -> {diff.to_step}: fidelity {diff.fidelity:.3f}"
+        problems = []
+        if diff.dropped_fields:
+            problems.append(f"dropped: {', '.join(diff.dropped_fields)}")
+        if diff.mutated:
+            problems.append(
+                "mutated: "
+                + ", ".join(f"{m.field} ({m.before!r} -> {m.after!r})" for m in diff.mutated)
+            )
+        if diff.type_changed:
+            problems.append(
+                "type changed: "
+                + ", ".join(
+                    f"{t.field} ({t.before_type} -> {t.after_type})"
+                    for t in diff.type_changed
+                )
+            )
+        if problems:
+            line += "  [" + "; ".join(problems) + "]"
+        print(line)
+    blame = chain_audit.blame()[:3]
+    if blame:
+        print("worst seams (fidelity x downstream impact):")
+        for entry in blame:
+            print(
+                f"  {entry.from_step} -> {entry.to_step}: "
+                f"severity {entry.severity:.3f}"
+            )
+    if args.html:
+        HtmlDiffReport.generate(chain_audit, args.html)
+        print(f"wrote HTML diff report to {args.html}")
+    if chain_audit.chain_fidelity < args.min_fidelity:
+        print(
+            f"gate: chain fidelity {chain_audit.chain_fidelity:.3f} < "
+            f"min-fidelity {args.min_fidelity}",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def cmd_suite(args: argparse.Namespace) -> int:
+    from .deterministic import DeterministicSuite, TimedOutput
+
+    try:
+        schema = json.loads(Path(args.schema).read_text(encoding="utf-8"))
+        refs = (
+            json.loads(Path(args.refs).read_text(encoding="utf-8")) if args.refs else None
+        )
+        outputs: dict[str, Any] = {}
+        for line_no, line in enumerate(
+            Path(args.outputs).read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            name = str(row.get("name", f"output-{line_no}"))
+            value = row.get("value", row.get("output"))
+            if "latency_ms" in row:
+                value = TimedOutput(value=value, latency_ms=float(row["latency_ms"]))
+            outputs[name] = value
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        print(f"error: cannot load suite inputs: {exc}", file=sys.stderr)
+        return 2
+    if not outputs:
+        print(f"error: no outputs found in {args.outputs}", file=sys.stderr)
+        return 2
+    report = DeterministicSuite().run_all(outputs, schema=schema, refs=refs)
+    print(report.summary())
+    return 0 if report.passed else 1
 
 
 def main(argv: list[str] | None = None) -> int:
